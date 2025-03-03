@@ -1,0 +1,207 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Changes of city conditions in different regions </title>
+    <script src="https://d3js.org/d3.v7.min.js"></script>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+        }
+        .axis-label {
+            font-size: 14px;
+        }
+        .legend {
+            font-size: 14px;
+        }
+        select {
+            margin: 10px;
+            padding: 5px;
+            font-size: 14px;
+        }
+        #heatmap {
+            margin-top: 20px;
+        }
+    </style>
+</head>
+<body>
+    <label for="locationSelect">Select location:</label>
+    <select id="locationSelect"></select>
+
+    <div id="heatmap"></div>
+
+    <script>
+        // 加载 CSV 数据
+        d3.csv("https://raw.githubusercontent.com/Liar-d/Data-Visualization-Project/refs/heads/main/data_region_heatmap.csv").then(data => {
+            // 解析时间字段
+            data.forEach(d => {
+                d.time_5min = new Date(d.time_5min);
+                d.avg_shake_intensity = +d.avg_shake_intensity || 0;
+                d.avg_sewer_water = +d.avg_sewer_water || 0;
+                d.avg_power = +d.avg_power || 0;
+                d.avg_roads_bridges = +d.avg_roads_bridges || 0;
+                d.avg_medical = +d.avg_medical || 0;
+                d.avg_buildings = +d.avg_buildings || 0;
+                d.count = +d.count || 0;
+            });
+
+            // 获取所有地区
+            const locations = Array.from(new Set(data.map(d => d.location)))
+		.map(Number)
+    		.sort((a, b) => a - b)
+   		.map(String);
+
+            // 需要绘制的检测对象
+            const variables = [
+                "avg_shake_intensity",
+                "avg_sewer_water",
+                "avg_power",
+                "avg_roads_bridges",
+                "avg_medical",
+                "avg_buildings"
+            ];
+
+            // 初始化地区选择框
+            const locationSelect = d3.select("#locationSelect");
+            locationSelect.selectAll("option")
+                .data(locations)
+                .enter().append("option")
+                .text(d => `location ${d}`)
+                .attr("value", d => d);
+
+            // 计算所有数据的最大值（用于归一化颜色）
+            const allValues = data.flatMap(d => variables.map(v => d[v]));
+            const globalMax = d3.max(allValues) || 1;
+            const colorScale = d3.scaleSequential(d3.interpolateOrRd).domain([0, globalMax]);
+
+            // 监听地区选择变化
+            locationSelect.on("change", updateChart);
+
+            // 初始绘图
+            updateChart();
+
+            function updateChart() {
+                d3.select("#heatmap").html("");
+                const selectedLocation = locationSelect.node().value;
+
+                // 筛选选定地区的数据
+                const filteredData = data.filter(d => d.location === selectedLocation);
+
+                // 按天分组数据
+                const groupedData = d3.group(filteredData, d => d3.timeFormat("%Y-%m-%d")(d.time_5min));
+
+                // 画图
+                const width = 1800, height = 280, margin = { top: 50, right: 250, bottom: 70, left: 150 };
+
+                groupedData.forEach((dayData, day) => {
+                    const svg = d3.select("#heatmap").append("svg")
+                        .attr("width", width)
+                        .attr("height", height);
+
+                    // 固定 X 轴范围为 0 点到 24 点
+                    const minTime = new Date(dayData[0].time_5min);
+                    minTime.setHours(0, 0, 0, 0); 
+                    const maxTime = new Date(minTime);
+                    maxTime.setHours(24, 0, 0, 0);
+
+                    // X 轴比例尺（时间）
+                    const xScale = d3.scaleTime()
+                        .domain([minTime, maxTime])
+                        .range([margin.left, width - margin.right]);
+
+                    // Y 轴比例尺（检测对象）
+                    const yScale = d3.scaleBand()
+                        .domain(variables)
+                        .range([height - margin.bottom, margin.top])
+                        .padding(0.1);
+
+                    // 绘制热力图方块
+                    svg.selectAll(".cell")
+                        .data(dayData.flatMap(d => variables.map(v => ({
+                            time: d.time_5min, 
+                            variable: v,
+                            value: d[v]
+                        }))))
+                        .enter().append("rect")
+                        .attr("class", "cell")
+                        .attr("x", d => xScale(d.time))
+                        .attr("y", d => yScale(d.variable))
+                        .attr("width", (width - margin.left - margin.right) / 288) // 24 * 60 / 5 = 288
+                        .attr("height", yScale.bandwidth())
+                        .attr("fill", d => colorScale(d.value));
+
+                    // 添加 X 轴
+                    const xAxis = d3.axisBottom(xScale)
+                        .ticks(d3.timeHour.every(1))
+                        .tickFormat(d3.timeFormat("%H:%M"));
+
+                    svg.append("g")
+                        .attr("transform", `translate(0,${height - margin.bottom})`)
+                        .call(xAxis)
+                        .selectAll("text")
+                        .attr("class", "axis-label")
+                        .style("text-anchor", "middle");
+
+                    // X 轴标签
+                    svg.append("text")
+                        .attr("x", width - 150)
+                        .attr("y", height - 60)
+                        .attr("text-anchor", "middle")
+                        .style("font-size", "16px")
+                        .text("Time (Hour : Minute)");
+
+                    // 添加 Y 轴
+                    svg.append("g")
+                        .attr("transform", `translate(${margin.left},0)`)
+ 			.attr("class", "axis-label")
+                        .call(d3.axisLeft(yScale));
+
+                    // Y 轴标签
+                    svg.append("text")
+                        .attr("x", margin.left - 120)
+                        .attr("y", margin.top - 20)
+                        .attr("text-anchor", "start")
+                        .style("font-size", "16px")
+                        .text("Detection Object");
+
+                    // 添加标题
+                    svg.append("text")
+                        .attr("x", width / 2 - 50)
+                        .attr("y", margin.top - 30)
+                        .attr("text-anchor", "middle")
+                        .style("font-size", "20px")
+                        .text(`The Change of City Conditions in Location ${selectedLocation} - ${day}`);
+
+                    // 添加图例
+                    const legendX = width - 220;
+                    const legend = svg.append("g")
+                        .attr("transform", `translate(${legendX}, 20)`)
+                        .attr("class", "legend");
+
+                    legend.append("text")
+                        .attr("x", -35)
+                        .attr("y", -10)
+                        .style("font-size", "14px")
+                        .text("Value Intensity");
+
+                    const gradient = legend.append("defs").append("linearGradient")
+                        .attr("id", "gradient")
+                        .attr("x1", "0%").attr("y1", "100%")
+                        .attr("x2", "0%").attr("y2", "0%");
+
+                    gradient.append("stop").attr("offset", "0%").attr("stop-color", colorScale(0));
+                    gradient.append("stop").attr("offset", "100%").attr("stop-color", colorScale(globalMax));
+
+                    legend.append("rect")
+                        .attr("width", 20)
+                        .attr("height", 100)
+                        .style("fill", "url(#gradient)");
+                });
+            }
+        }).catch(error => {
+            console.error("Error：", error);
+        });
+    </script>
+</body>
+</html>

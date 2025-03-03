@@ -1,0 +1,156 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>The overall trend of changes in city conditions</title>
+    <script src="https://d3js.org/d3.v7.min.js"></script>
+    <style>
+        .line { fill: none; stroke-width: 2px; }
+        .axis-label { font-size: 14px; }
+        .legend { font-size: 14px; }
+    </style>
+</head>
+<body>
+    <div id="charts"></div>
+
+    <script>
+        // 读取数据
+        d3.csv("https://raw.githubusercontent.com/Liar-d/Data-Visualization-Project/refs/heads/main/data_total_trend.csv").then(data => {
+            // 解析时间字段
+            data.forEach(d => {
+                d.time_5min = new Date(d.time_5min);
+                d.avg_shake_intensity = +d.avg_shake_intensity;
+                d.avg_sewer_water = +d.avg_sewer_water;
+                d.avg_power = +d.avg_power;
+                d.avg_roads_bridges = +d.avg_roads_bridges;
+                d.avg_medical = +d.avg_medical;
+                d.avg_buildings = +d.avg_buildings;
+            });
+
+            // 计算所有天的时间范围（固定 00:00 - 23:59）
+            const minTime = d3.timeParse("%H:%M")("00:00");
+            const maxTime = d3.timeParse("%H:%M")("24:00");
+
+            // 按天分组数据
+            const groupedData = d3.group(data, d => d3.timeFormat("%Y-%m-%d")(d.time_5min));
+ 	    // 颜色映射
+            const colors = d3.scaleOrdinal(d3.schemeCategory10); 
+
+            // 画图
+            const width = 1800, height = 300, margin = { top: 40, right: 250, bottom: 50, left: 80 };
+            const container = d3.select("#charts");
+
+            groupedData.forEach((dayData, day) => {
+                const svg = container.append("svg")
+                    .attr("width", width)
+                    .attr("height", height);
+
+                // X 轴范围固定（00:00 - 23:59）
+                const xScale = d3.scaleTime()
+                    .domain([minTime, maxTime])
+                    .range([margin.left, width - margin.right]);
+
+                // Y 轴范围
+                const yScale = d3.scaleLinear()
+                    .domain([0, d3.max(data, d => Math.max(
+                        d.avg_shake_intensity, d.avg_sewer_water, d.avg_power, 
+                        d.avg_roads_bridges, d.avg_medical, d.avg_buildings))])
+                    .range([height - margin.bottom, margin.top]);
+
+                // 生成线条
+                const lineGenerator = d3.line()
+                    .x(d => xScale(d3.timeParse("%H:%M")(d3.timeFormat("%H:%M")(d.time_5min))))
+                    .y(d => yScale(d.value));
+
+                // 需要绘制的变量
+                const variables = ["avg_shake_intensity", "avg_sewer_water", "avg_power", "avg_roads_bridges", "avg_medical", "avg_buildings"];
+                const lineData = variables.map(varName => ({
+                    name: varName,
+                    values: dayData.map(d => ({
+                        time_5min: d3.timeParse("%H:%M")(d3.timeFormat("%H:%M")(d.time_5min)), 
+                        value: d[varName]
+                    }))
+                }));
+
+                // 画线
+                lineData.forEach((dataset, i) => {
+                    svg.append("path")
+                        .datum(dataset.values)
+                        .attr("class", "line")
+                        .attr("stroke", colors(i))
+                        .attr("stroke-width", 2)
+                        .attr("fill", "none")
+                        .attr("d", lineGenerator);
+                });
+
+                // 添加 X 轴（固定刻度）
+                const xAxis = d3.axisBottom(xScale)
+                    .ticks(d3.timeHour.every(1))
+                    .tickFormat(d3.timeFormat("%H:%M")); 
+
+                svg.append("g")
+                    .attr("transform", `translate(0,${height - margin.bottom})`)
+                    .call(xAxis)
+                    .selectAll("text")
+                    .attr("class", "axis-label")
+                    .style("text-anchor", "middle");
+
+		// X 轴标签
+                svg.append("text")
+                    .attr("x", width - 160)
+                    .attr("y", height - 40)
+                    .attr("text-anchor", "middle")
+                    .style("font-size", "16px")
+                    .text("Time (Hour : Minute)");
+
+                // 添加 Y 轴
+                svg.append("g")
+                    .attr("transform", `translate(${margin.left},0)`)
+		    .attr("class", "axis-label")
+                    .call(d3.axisLeft(yScale));
+
+		// Y 轴标签
+                svg.append("text")
+                    .attr("x", margin.left - 80)
+                    .attr("y", margin.top - 20)
+                    .attr("text-anchor", "start")
+                    .style("font-size", "16px")
+                    .text("Mean Condition Status");
+
+                // 添加标题
+                svg.append("text")
+                    .attr("x", width / 2 - 70)
+                    .attr("y", margin.top - 20)
+                    .attr("text-anchor", "middle")
+                    .style("font-size", "20px")
+                    .text(`The overall trend of changes in city conditions - ${day}`);
+
+                // 添加图例
+                const legendX = width - 220;
+                const legend = svg.append("g")
+                    .attr("transform", `translate(${legendX}, 20)`)
+                    .attr("class", "legend");
+
+                lineData.forEach((dataset, i) => {
+                    const legendRow = legend.append("g")
+                        .attr("transform", `translate(0, ${i * 20})`);
+
+                    legendRow.append("rect")
+                        .attr("width", 12)
+                        .attr("height", 12)
+                        .attr("fill", colors(i));
+
+                    legendRow.append("text")
+                        .attr("x", 20)
+                        .attr("y", 10)
+                        .style("font-size", "14px")
+                        .text(dataset.name.replace("avg_", ""));
+                });
+            });
+        }).catch(error => {
+            console.error("Error：", error);
+        });
+    </script>
+</body>
+</html>

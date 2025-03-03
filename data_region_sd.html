@@ -1,0 +1,210 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Scatter plots of uncertainty in city conditions</title>
+    <script src="https://d3js.org/d3.v7.min.js"></script>
+    <style>
+        .dot { opacity: 0.7; }
+        .axis-label { font-size: 14px; }
+        .legend { font-size: 14px; }
+        select { margin: 10px; padding: 5px; font-size: 14px; }
+    </style>
+</head>
+<body>
+    <label for="locationSelect">Select location:</label>
+    <select id="locationSelect"></select>
+
+    <label for="variableSelect">Select detection object:</label>
+    <select id="variableSelect"></select>
+
+    <div id="scatterplot"></div>
+
+    <script>
+        // 读取数据
+        d3.csv("https://raw.githubusercontent.com/Liar-d/Data-Visualization-Project/refs/heads/main/data_region_sd.csv").then(data => {
+            // 解析数据
+            data.forEach(d => {
+                d.time_5min = new Date(d.time_5min);
+                d.sd_shake_intensity = +d.sd_shake_intensity;
+                d.sd_sewer_water = +d.sd_sewer_water;
+                d.sd_power = +d.sd_power;
+                d.sd_roads_bridges = +d.sd_roads_bridges;
+                d.sd_medical = +d.sd_medical;
+                d.sd_buildings = +d.sd_buildings;
+            });
+
+            // 提取所有地区和变量选项
+            const locations = Array.from(new Set(data.map(d => d.location)))
+		.map(Number)
+    		.sort((a, b) => a - b)
+   		.map(String);
+
+            const variables = {
+                "sd_shake_intensity": "Shake Intensity",
+                "sd_sewer_water": "Sewer & Water",
+                "sd_power": "Power",
+                "sd_roads_bridges": "Roads & Bridges",
+                "sd_medical": "Medical",
+                "sd_buildings": "Buildings"
+            };
+
+	    // 计算所有天的时间范围（固定 00:00 - 23:59）
+            const minTime = d3.timeParse("%H:%M")("00:00");
+            const maxTime = d3.timeParse("%H:%M")("24:00");
+
+            // 初始化下拉框
+            const locationSelect = d3.select("#locationSelect");
+            const variableSelect = d3.select("#variableSelect");
+
+            locationSelect.selectAll("option")
+                .data(locations)
+                .enter().append("option")
+                .text(d => `location ${d}`)
+                .attr("value", d => d);
+
+            variableSelect.selectAll("option")
+                .data(Object.entries(variables))
+                .enter().append("option")
+                .text(d => d[1])
+                .attr("value", d => d[0]);
+
+            // 监听下拉框变化
+            locationSelect.on("change", updateChart);
+            variableSelect.on("change", updateChart);
+
+            // 初始绘图
+            updateChart();
+
+            function updateChart() {
+                d3.select("#scatterplot").html("");
+                const selectedLocation = locationSelect.node().value;
+                const selectedVariable = variableSelect.node().value;
+
+                // 筛选选定地区的数据
+                const filteredData = data.filter(d => d.location === selectedLocation);
+
+                // 按天分组数据
+                const groupedData = d3.group(filteredData, d => d3.timeFormat("%Y-%m-%d")(d.time_5min));
+
+                // 画图
+                const width = 1800, height = 400, margin = { top: 50, right: 250, bottom: 70, left: 100 };
+                const colors = d3.scaleOrdinal(d3.schemeCategory10);
+
+                groupedData.forEach((dayData, day) => {
+                    const svg = d3.select("#scatterplot").append("svg")
+                        .attr("width", width)
+                        .attr("height", height);
+
+		// 计算该地区 & 该检测对象的 Y 轴最大值
+		const yMax = d3.max(filteredData, d => d[selectedVariable]) || 1;
+
+                    // X 轴（时间）
+                    const xScale = d3.scaleTime()
+                        .domain([minTime, maxTime])
+                        .range([margin.left, width - margin.right]);
+
+                    // Y 轴（不确定性值）
+                    const yScale = d3.scaleLinear()
+                        .domain([0, yMax])
+                        .range([height - margin.bottom, margin.top]);
+
+                    // 绘制散点
+                    svg.selectAll(".dot")
+                        .data(dayData)
+                        .enter().append("circle")
+                        .attr("class", "dot")
+                        .attr("cx", d => xScale(d3.timeParse("%H:%M")(d3.timeFormat("%H:%M")(d.time_5min))))
+                        .attr("cy", d => {
+                            // 如果是 NA 值，将其置为 y=0
+                            return isNaN(d[selectedVariable]) ? yScale(0) : yScale(d[selectedVariable]);
+                        })
+                        .attr("r", 4)
+                        .attr("fill", d => isNaN(d[selectedVariable]) ? "red" : colors(selectedVariable))
+			.attr("fill-opacity", d => isNaN(d[selectedVariable]) ? 0.5 : 1);
+
+                    // 添加 X 轴
+                    const xAxis = d3.axisBottom(xScale)
+                        .ticks(d3.timeHour.every(1))
+                        .tickFormat(d3.timeFormat("%H:%M"));
+
+                    svg.append("g")
+                        .attr("transform", `translate(0,${height - margin.bottom})`)
+                        .call(xAxis)
+                        .selectAll("text")
+                        .attr("class", "axis-label")
+                        .style("text-anchor", "middle");
+
+                    // X 轴标签
+                    svg.append("text")
+                        .attr("x", width - 150)
+                        .attr("y", height - 60)
+                        .attr("text-anchor", "middle")
+                        .style("font-size", "16px")
+                        .text("Time (Hour : Minute)");
+
+                    // 添加 Y 轴
+                    svg.append("g")
+                        .attr("transform", `translate(${margin.left},0)`)
+			.attr("class", "axis-label")
+                        .call(d3.axisLeft(yScale));
+
+                    // Y 轴标签
+                    svg.append("text")
+                        .attr("x", margin.left - 100)
+                        .attr("y", margin.top - 20)
+                        .attr("text-anchor", "start")
+                        .style("font-size", "16px")
+                        .text(" Uncertainty of " + variables[selectedVariable]);
+
+                    // 添加标题（根据选定地区动态变化）
+                    svg.append("text")
+                        .attr("x", width / 2 - 80)
+                        .attr("y", margin.top - 20)
+                        .attr("text-anchor", "middle")
+                        .style("font-size", "20px")
+                        .text(`The Uncertainty of ${variables[selectedVariable]} in Location ${selectedLocation} - ${day}`);
+
+                    // 添加图例
+                    const legendX = width - 220;
+                    const legend = svg.append("g")
+                        .attr("transform", `translate(${legendX}, 20)`)
+                        .attr("class", "legend");
+
+                    const legendRow = legend.append("g");
+
+                    legendRow.append("rect")
+                        .attr("width", 12)
+                        .attr("height", 12)
+                        .attr("fill", colors(selectedVariable));
+
+                    legendRow.append("text")
+                        .attr("x", 20)
+                        .attr("y", 10)
+                        .style("font-size", "14px")
+                        .text(variables[selectedVariable]);
+
+                     // 添加 NaN 图例
+		    const nanLegendRow = legend.append("g")
+    			.attr("transform", `translate(0, 20)`);
+
+		    nanLegendRow.append("rect")
+    			.attr("width", 12)
+    			.attr("height", 12)
+    			.attr("fill", "red")
+			.attr("fill-opacity", 0.5);
+
+		    nanLegendRow.append("text")
+   			.attr("x", 20)
+    			.attr("y", 10)
+    			.style("font-size", "14px")
+    			.text("No data reported");
+                });
+            }
+        }).catch(error => {
+            console.error("Error：", error);
+        });
+    </script>
+</body>
+</html>
