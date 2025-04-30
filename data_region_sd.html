@@ -22,9 +22,9 @@
     <div id="scatterplot"></div>
 
     <script>
-        // 读取数据
-        d3.csv("https://raw.githubusercontent.com/Liar-d/Data-Visualization-Project/refs/heads/main/data_region_sd.csv").then(data => {
-            // 解析数据
+        // Load data
+        d3.csv("./data_region_sd.csv").then(data => {
+            // Parse data
             data.forEach(d => {
                 d.time_5min = new Date(d.time_5min);
                 d.sd_shake_intensity = +d.sd_shake_intensity;
@@ -35,7 +35,7 @@
                 d.sd_buildings = +d.sd_buildings;
             });
 
-            // 提取所有地区和变量选项
+            // Extract all locations and variable options
             const locations = Array.from(new Set(data.map(d => d.location)))
 		.map(Number)
     		.sort((a, b) => a - b)
@@ -50,11 +50,11 @@
                 "sd_buildings": "Buildings"
             };
 
-	    // 计算所有天的时间范围（固定 00:00 - 23:59）
+	    // Calculate time range for all days (fixed 00:00 - 23:59)
             const minTime = d3.timeParse("%H:%M")("00:00");
             const maxTime = d3.timeParse("%H:%M")("24:00");
 
-            // 初始化下拉框
+            // Initialize dropdown menus
             const locationSelect = d3.select("#locationSelect");
             const variableSelect = d3.select("#variableSelect");
 
@@ -70,11 +70,11 @@
                 .text(d => d[1])
                 .attr("value", d => d[0]);
 
-            // 监听下拉框变化
+            // Listen for dropdown changes
             locationSelect.on("change", updateChart);
             variableSelect.on("change", updateChart);
 
-            // 初始绘图
+            // Initial chart rendering
             updateChart();
 
             function updateChart() {
@@ -82,13 +82,13 @@
                 const selectedLocation = locationSelect.node().value;
                 const selectedVariable = variableSelect.node().value;
 
-                // 筛选选定地区的数据
+                // Filter data for selected location
                 const filteredData = data.filter(d => d.location === selectedLocation);
 
-                // 按天分组数据
+                // Group data by day
                 const groupedData = d3.group(filteredData, d => d3.timeFormat("%Y-%m-%d")(d.time_5min));
 
-                // 画图
+                // Draw chart
                 const width = 1800, height = 400, margin = { top: 50, right: 250, bottom: 70, left: 100 };
                 const colors = d3.scaleOrdinal(d3.schemeCategory10);
 
@@ -97,34 +97,33 @@
                         .attr("width", width)
                         .attr("height", height);
 
-		// 计算该地区 & 该检测对象的 Y 轴最大值
+		// Calculate Y-axis max for selected location & variable
 		const yMax = d3.max(filteredData, d => d[selectedVariable]) || 1;
 
-                    // X 轴（时间）
+                    // X-axis (time)
                     const xScale = d3.scaleTime()
                         .domain([minTime, maxTime])
                         .range([margin.left, width - margin.right]);
 
-                    // Y 轴（不确定性值）
+                    // Y-axis (uncertainty value)
                     const yScale = d3.scaleLinear()
                         .domain([0, yMax])
                         .range([height - margin.bottom, margin.top]);
 
-                    // 绘制散点
+                    // Draw scatter points
                     svg.selectAll(".dot")
                         .data(dayData)
                         .enter().append("circle")
                         .attr("class", "dot")
                         .attr("cx", d => xScale(d3.timeParse("%H:%M")(d3.timeFormat("%H:%M")(d.time_5min))))
                         .attr("cy", d => {
-                            // 如果是 NA 值，将其置为 y=0
                             return isNaN(d[selectedVariable]) ? yScale(0) : yScale(d[selectedVariable]);
                         })
                         .attr("r", 4)
                         .attr("fill", d => isNaN(d[selectedVariable]) ? "red" : colors(selectedVariable))
 			.attr("fill-opacity", d => isNaN(d[selectedVariable]) ? 0.5 : 1);
 
-                    // 添加 X 轴
+                    // Add X-axis
                     const xAxis = d3.axisBottom(xScale)
                         .ticks(d3.timeHour.every(1))
                         .tickFormat(d3.timeFormat("%H:%M"));
@@ -136,7 +135,7 @@
                         .attr("class", "axis-label")
                         .style("text-anchor", "middle");
 
-                    // X 轴标签
+                    // X-axis label
                     svg.append("text")
                         .attr("x", width - 150)
                         .attr("y", height - 60)
@@ -144,13 +143,13 @@
                         .style("font-size", "16px")
                         .text("Time (Hour : Minute)");
 
-                    // 添加 Y 轴
+                    // Add Y-axis
                     svg.append("g")
                         .attr("transform", `translate(${margin.left},0)`)
 			.attr("class", "axis-label")
                         .call(d3.axisLeft(yScale));
 
-                    // Y 轴标签
+                    // Y-axis label
                     svg.append("text")
                         .attr("x", margin.left - 100)
                         .attr("y", margin.top - 20)
@@ -158,7 +157,7 @@
                         .style("font-size", "16px")
                         .text(" Uncertainty of " + variables[selectedVariable]);
 
-                    // 添加标题（根据选定地区动态变化）
+                    // Add title (dynamically based on selection)
                     svg.append("text")
                         .attr("x", width / 2 - 80)
                         .attr("y", margin.top - 20)
@@ -166,7 +165,7 @@
                         .style("font-size", "20px")
                         .text(`The Uncertainty of ${variables[selectedVariable]} in Location ${selectedLocation} - ${day}`);
 
-                    // 添加图例
+                    // Add legend
                     const legendX = width - 220;
                     const legend = svg.append("g")
                         .attr("transform", `translate(${legendX}, 20)`)
@@ -185,7 +184,7 @@
                         .style("font-size", "14px")
                         .text(variables[selectedVariable]);
 
-                     // 添加 NaN 图例
+                     // Add NaN legend
 		    const nanLegendRow = legend.append("g")
     			.attr("transform", `translate(0, 20)`);
 
